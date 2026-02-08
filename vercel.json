@@ -1,8 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "**", "use": "@vercel/static" }
-  ],
+  "outputDirectory": "frontend",
   "headers": [
     {
       "source": "/css/(.*)",

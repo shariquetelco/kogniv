@@ -310,6 +310,7 @@ function renderCardList(cards, activeCardId) {
     const countEl = document.getElementById('cardListCount');
     if (countEl) countEl.textContent = `${cards.length} cards`;
 
+    // Render ALL filtered cards as scrollable list
     container.innerHTML = cards.map(card => {
         const tagColor = getTagColor(card.category);
         return `
@@ -319,9 +320,67 @@ function renderCardList(cards, activeCardId) {
             </div>
         `;
     }).join('');
+
+    // Scroll active card into view
+    setTimeout(() => {
+        const activeEl = container.querySelector('.card-list-item.active');
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    }, 50);
+
+    // Render heading outline for the active card
+    const activeCard = cards.find(c => c.id === activeCardId);
+    if (activeCard) renderHeadingOutline(activeCard);
+}
+
+function renderHeadingOutline(card) {
+    const outlineEl = document.getElementById('cardHeadingOutline');
+    if (!outlineEl) return;
+
+    // Parse headings from card content
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = card.content;
+    const headings = tempDiv.querySelectorAll('h1, h2, h3');
+
+    if (headings.length === 0) {
+        outlineEl.innerHTML = '';
+        outlineEl.style.display = 'none';
+        return;
+    }
+
+    outlineEl.style.display = 'block';
+
+    let html = '<div class="outline-title">Outline</div>';
+    headings.forEach((h, idx) => {
+        const level = parseInt(h.tagName[1]); // 1, 2, or 3
+        const text = h.textContent.trim();
+        html += `
+            <div class="outline-item outline-h${level}" data-outline-idx="${idx}">
+                ${escapeHtml(text)}
+            </div>
+        `;
+    });
+
+    outlineEl.innerHTML = html;
+
+    // Click heading → scroll to it in reader
+    outlineEl.querySelectorAll('[data-outline-idx]').forEach(item => {
+        item.addEventListener('click', () => {
+            const idx = parseInt(item.dataset.outlineIdx);
+            const readerContent = document.getElementById('readerContent');
+            if (!readerContent) return;
+            const readerHeadings = readerContent.querySelectorAll('h1, h2, h3');
+            if (readerHeadings[idx]) {
+                readerHeadings[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
 }
 
 export function handleCardListClick(e) {
+    // Handle outline heading clicks
+    const outlineItem = e.target.closest('[data-outline-idx]');
+    if (outlineItem) return; // Already handled by renderHeadingOutline
+
     const item = e.target.closest('[data-list-card-id]');
     if (!item) return;
 
@@ -361,14 +420,11 @@ function renderCardReader(card) {
             </div>
         </div>
 
-        <div class="reader-body">
-            <span class="reader-tag" style="background:${tagColor};">${escapeHtml(card.category)}</span>
-            <h2 class="reader-title">${escapeHtml(card.title)}</h2>
-            <div class="reader-content" id="readerContent">${card.content}</div>
-            <div class="reader-editable" id="readerEditable" contenteditable="true" style="display:none;" data-card-id="${card.id}">${card.content}</div>
-        </div>
-
         <div class="reader-edit-toolbar" id="readerEditToolbar" style="display:none;">
+            <button class="toolbar-btn" data-format="formatBlock-h1" title="Heading 1">H1</button>
+            <button class="toolbar-btn" data-format="formatBlock-h2" title="Heading 2">H2</button>
+            <button class="toolbar-btn" data-format="formatBlock-h3" title="Heading 3">H3</button>
+            <div class="toolbar-separator"></div>
             <button class="toolbar-btn" data-format="bold" title="Bold"><b>B</b></button>
             <button class="toolbar-btn" data-format="italic" title="Italic"><i>I</i></button>
             <button class="toolbar-btn" data-format="underline" title="Underline"><u>U</u></button>
@@ -376,9 +432,22 @@ function renderCardReader(card) {
             <button class="toolbar-btn" data-format="insertUnorderedList" title="Bullet List">&#8226;</button>
             <button class="toolbar-btn" data-format="insertOrderedList" title="Numbered List">1.</button>
             <div class="toolbar-separator"></div>
+            <span class="toolbar-label">Text:</span>
+            <input type="color" class="toolbar-color-picker" id="textColorPicker" value="#000000" title="Text Color">
+            <span class="toolbar-label">BG:</span>
+            <input type="color" class="toolbar-color-picker" id="bgColorPicker" value="#ffff00" title="Highlight Color">
+            <div class="toolbar-separator"></div>
             <button class="toolbar-btn" data-format="answer" title="Answer Box">A</button>
             <button class="toolbar-btn" data-format="tip" title="Tip Box">Tip</button>
             <button class="toolbar-btn" data-format="warning" title="Warning Box">&#9888;</button>
+            <button class="toolbar-btn" data-format="formatBlock-p" title="Normal text">P</button>
+        </div>
+
+        <div class="reader-body">
+            <span class="reader-tag" style="background:${tagColor};">${escapeHtml(card.category)}</span>
+            <h2 class="reader-title">${escapeHtml(card.title)}</h2>
+            <div class="reader-content" id="readerContent">${card.content}</div>
+            <div class="reader-editable" id="readerEditable" contenteditable="true" style="display:none;" data-card-id="${card.id}">${card.content}</div>
         </div>
     `;
 
@@ -395,6 +464,19 @@ function renderCardReader(card) {
     pane.querySelectorAll('[data-format]').forEach(btn => {
         btn.addEventListener('click', () => applyFormat(btn.dataset.format));
     });
+
+    // Wire color pickers
+    document.getElementById('textColorPicker')?.addEventListener('input', (e) => {
+        document.execCommand('foreColor', false, e.target.value);
+        document.getElementById('readerEditable')?.focus();
+    });
+    document.getElementById('bgColorPicker')?.addEventListener('input', (e) => {
+        document.execCommand('hiliteColor', false, e.target.value);
+        document.getElementById('readerEditable')?.focus();
+    });
+
+    // Update heading outline in left pane
+    renderHeadingOutline(card);
 }
 
 function navigateReader(direction, cards) {
@@ -452,6 +534,14 @@ function toggleReaderEdit(card) {
 function applyFormat(format) {
     const editable = document.getElementById('readerEditable');
     if (!editable) return;
+
+    // H1, H2, H3, P formatting
+    if (format.startsWith('formatBlock-')) {
+        const tag = format.replace('formatBlock-', '');
+        document.execCommand('formatBlock', false, `<${tag}>`);
+        editable.focus();
+        return;
+    }
 
     if (format === 'answer' || format === 'tip' || format === 'warning') {
         const classMap = { answer: 'answer-box', tip: 'tip-box', warning: 'warning-box' };

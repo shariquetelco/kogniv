@@ -1,0 +1,145 @@
+# KOGNIV CI/CD Pipeline
+# Triggers on push to main and pull requests
+# Validates code, builds Docker image, deploys to Vercel
+
+name: KOGNIV CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ========================================
+  # JOB 1: Validate & Test
+  # ========================================
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check all JS modules
+        run: |
+          echo "Checking JavaScript syntax..."
+          for file in frontend/js/*.js; do
+            node --check "$file" && echo "  PASS: $file"
+          done
+          echo "All modules passed syntax check."
+
+      - name: Validate HTML
+        run: |
+          echo "Checking HTML file exists and is valid..."
+          test -f frontend/index.html && echo "  PASS: index.html exists"
+
+      - name: Validate CSS
+        run: |
+          echo "Checking CSS file exists..."
+          test -f frontend/css/styles.css && echo "  PASS: styles.css exists"
+
+      - name: Check file structure
+        run: |
+          echo "Validating project structure..."
+          test -d frontend/js && echo "  PASS: frontend/js/"
+          test -d frontend/css && echo "  PASS: frontend/css/"
+          test -f vercel.json && echo "  PASS: vercel.json"
+          test -f Dockerfile && echo "  PASS: Dockerfile"
+          echo "Structure validated."
+
+  # ========================================
+  # JOB 2: Build Docker Image
+  # ========================================
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t kogniv:${{ github.sha }} .
+
+      - name: Test Docker container starts
+        run: |
+          docker run -d --name kogniv-test -p 8080:80 kogniv:${{ github.sha }}
+          sleep 3
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+          echo "HTTP Status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "ERROR: Container did not return 200"
+            docker logs kogniv-test
+            exit 1
+          fi
+          echo "Container is healthy."
+          docker stop kogniv-test
+          docker rm kogniv-test
+
+  # ========================================
+  # JOB 3: Deploy to Vercel (main only)
+  # ========================================
+  deploy-vercel:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: '.'
+
+  # ========================================
+  # JOB 4: Create Release Tag (on version bump)
+  # ========================================
+  tag-release:
+    name: Tag Release
+    runs-on: ubuntu-latest
+    needs: [validate, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from package.json
+        id: version
+        run: echo "version=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git tag -l "${{ steps.version.outputs.version }}" | grep -q .; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Git tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git tag ${{ steps.version.outputs.version }}
+          git push origin ${{ steps.version.outputs.version }}

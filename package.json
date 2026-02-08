@@ -1,10 +1,15 @@
 {
-  "name": "smart-knowledge-card-builder",
+  "name": "kogniv",
   "version": "1.0.0",
-  "description": "Transform documents into organized, searchable knowledge cards",
+  "description": "KOGNIV — AI-powered document-to-knowledge-card engine. Transform any document into structured, searchable knowledge.",
+  "author": "Sharique",
+  "license": "UNLICENSED",
+  "private": true,
   "scripts": {
-    "dev": "npx serve . -l 3000",
-    "start": "npx serve . -l 3000"
+    "dev": "npx serve ./frontend -l 3000",
+    "start": "npx serve ./frontend -l 3000",
+    "lint": "echo 'No linter configured yet'",
+    "build": "echo 'Static site — no build step needed'"
   },
   "devDependencies": {
     "serve": "^14.2.0"
