@@ -30,3 +30,5 @@ build/
 
 # Vercel
 .vercel/
+.vercel
+.env*.local

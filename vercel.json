@@ -1,6 +1,8 @@
 {
   "version": 2,
+  "buildCommand": "",
   "outputDirectory": "frontend",
+  "framework": null,
   "headers": [
     {
       "source": "/css/(.*)",
